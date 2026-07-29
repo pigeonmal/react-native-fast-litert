@@ -4,17 +4,43 @@
 #include <NitroModules/ArrayBuffer.hpp>
 #include <NitroModules/Promise.hpp>
 
+#include <litert/c/litert_options.h>
+
 #include <cstring>
 #include <stdexcept>
 
 namespace margelo::nitro::tflite {
+namespace {
 
-HybridTfliteModel::HybridTfliteModel(
-    LiteRtEnvironment environment, LiteRtModel model, LiteRtCompiledModel compiledModel,
-    std::vector<LiteRtTensorBuffer> inputBuffers,
-    std::vector<LiteRtTensorBuffer> outputBuffers, std::vector<Tensor> inputs,
-    std::vector<Tensor> outputs, std::shared_ptr<ArrayBuffer> modelData,
-    std::vector<TensorflowModelDelegate> delegates)
+class OptionsHandle final {
+public:
+  ~OptionsHandle() {
+    if (_value != nullptr) {
+      LiteRtDestroyOptions(_value);
+    }
+  }
+
+  LiteRtOptions* out() {
+    return &_value;
+  }
+
+  LiteRtOptions get() const {
+    return _value;
+  }
+
+private:
+  LiteRtOptions _value = nullptr;
+};
+
+} // namespace
+
+HybridTfliteModel::HybridTfliteModel(LiteRtEnvironment environment, LiteRtModel model,
+                                     LiteRtCompiledModel compiledModel,
+                                     std::vector<LiteRtTensorBuffer> inputBuffers,
+                                     std::vector<LiteRtTensorBuffer> outputBuffers,
+                                     std::vector<Tensor> inputs, std::vector<Tensor> outputs,
+                                     std::shared_ptr<ArrayBuffer> modelData,
+                                     std::vector<TensorflowModelDelegate> delegates)
     : HybridObject(TAG), _environment(environment), _model(model), _compiledModel(compiledModel),
       _inputBuffers(std::move(inputBuffers)), _outputBuffers(std::move(outputBuffers)),
       _inputs(std::move(inputs)), _outputs(std::move(outputs)),
@@ -22,12 +48,8 @@ HybridTfliteModel::HybridTfliteModel(
       _modelData(std::move(modelData)) {}
 
 HybridTfliteModel::~HybridTfliteModel() {
-  for (LiteRtTensorBuffer buffer : _outputBuffers) {
-    LiteRtDestroyTensorBuffer(buffer);
-  }
-  for (LiteRtTensorBuffer buffer : _inputBuffers) {
-    LiteRtDestroyTensorBuffer(buffer);
-  }
+  destroyTensorBuffers(_outputBuffers);
+  destroyTensorBuffers(_inputBuffers);
   if (_compiledModel != nullptr) {
     LiteRtDestroyCompiledModel(_compiledModel);
   }
@@ -40,6 +62,7 @@ HybridTfliteModel::~HybridTfliteModel() {
 }
 
 std::vector<TensorflowModelDelegate> HybridTfliteModel::getDelegates() {
+  std::lock_guard<std::mutex> lock(_inferenceMutex);
   return _delegates;
 }
 
@@ -51,8 +74,25 @@ std::vector<Tensor> HybridTfliteModel::getOutputs() {
   return _outputs;
 }
 
-std::vector<std::shared_ptr<ArrayBuffer>> HybridTfliteModel::cloneInputBuffers(
-    const std::vector<std::shared_ptr<ArrayBuffer>>& input) const {
+size_t HybridTfliteModel::getExternalMemorySize() noexcept {
+  size_t byteSize = _modelData == nullptr ? 0 : _modelData->size();
+  for (LiteRtTensorBuffer buffer : _inputBuffers) {
+    size_t bufferSize = 0;
+    if (LiteRtGetTensorBufferSize(buffer, &bufferSize) == kLiteRtStatusOk) {
+      byteSize += bufferSize;
+    }
+  }
+  for (LiteRtTensorBuffer buffer : _outputBuffers) {
+    size_t bufferSize = 0;
+    if (LiteRtGetTensorBufferSize(buffer, &bufferSize) == kLiteRtStatusOk) {
+      byteSize += bufferSize;
+    }
+  }
+  return byteSize;
+}
+
+std::vector<std::shared_ptr<ArrayBuffer>>
+HybridTfliteModel::cloneInputBuffers(const std::vector<std::shared_ptr<ArrayBuffer>>& input) const {
   std::vector<std::shared_ptr<ArrayBuffer>> copies;
   copies.reserve(input.size());
   for (const std::shared_ptr<ArrayBuffer>& buffer : input) {
@@ -63,8 +103,7 @@ std::vector<std::shared_ptr<ArrayBuffer>> HybridTfliteModel::cloneInputBuffers(
   return copies;
 }
 
-void HybridTfliteModel::copyInputBuffers(
-    const std::vector<std::shared_ptr<ArrayBuffer>>& input) {
+void HybridTfliteModel::copyInputBuffers(const std::vector<std::shared_ptr<ArrayBuffer>>& input) {
   if (input.size() != _inputBuffers.size()) {
     throw std::runtime_error("LiteRT: Input array size (" + std::to_string(input.size()) +
                              ") does not match input tensor count (" +
@@ -82,10 +121,9 @@ void HybridTfliteModel::copyInputBuffers(
     }
 
     void* destination = nullptr;
-    throwIfLiteRtError(
-        LiteRtLockTensorBuffer(_inputBuffers[index], &destination,
-                               kLiteRtTensorBufferLockModeWrite),
-        "lock input tensor");
+    throwIfLiteRtError(LiteRtLockTensorBuffer(_inputBuffers[index], &destination,
+                                              kLiteRtTensorBufferLockModeWrite),
+                       "lock input tensor");
     std::memcpy(destination, input[index]->data(), expectedSize);
     throwIfLiteRtError(LiteRtUnlockTensorBuffer(_inputBuffers[index]), "unlock input tensor");
   }
@@ -99,8 +137,7 @@ std::vector<std::shared_ptr<ArrayBuffer>> HybridTfliteModel::copyOutputBuffers()
     size_t byteSize = 0;
     throwIfLiteRtError(LiteRtGetTensorBufferPackedSize(_outputBuffers[index], &byteSize),
                        "read output tensor size");
-    if (_outputArrayBuffers[index] == nullptr ||
-        _outputArrayBuffers[index]->size() != byteSize) {
+    if (_outputArrayBuffers[index] == nullptr || _outputArrayBuffers[index]->size() != byteSize) {
       _outputArrayBuffers[index] = ArrayBuffer::allocate(byteSize);
     }
 
@@ -109,21 +146,84 @@ std::vector<std::shared_ptr<ArrayBuffer>> HybridTfliteModel::copyOutputBuffers()
         LiteRtLockTensorBuffer(_outputBuffers[index], &source, kLiteRtTensorBufferLockModeRead),
         "lock output tensor");
     std::memcpy(_outputArrayBuffers[index]->data(), source, byteSize);
-    throwIfLiteRtError(LiteRtUnlockTensorBuffer(_outputBuffers[index]),
-                       "unlock output tensor");
+    throwIfLiteRtError(LiteRtUnlockTensorBuffer(_outputBuffers[index]), "unlock output tensor");
     results.push_back(_outputArrayBuffers[index]);
   }
   return results;
 }
 
-std::vector<std::shared_ptr<ArrayBuffer>> HybridTfliteModel::runLocked(
-    const std::vector<std::shared_ptr<ArrayBuffer>>& input) {
+void HybridTfliteModel::rebuildForCpu() {
+  OptionsHandle options;
+  throwIfLiteRtError(LiteRtCreateOptions(options.out()), "create CPU fallback options");
+  throwIfLiteRtError(LiteRtSetOptionsHardwareAccelerators(options.get(), kLiteRtHwAcceleratorCpu),
+                     "select CPU fallback");
+
+  LiteRtCompiledModel cpuCompiledModel = nullptr;
+  LiteRtStatus compileStatus =
+      LiteRtCreateCompiledModel(_environment, _model, options.get(),
+                                &cpuCompiledModel);
+  if (compileStatus != kLiteRtStatusOk) {
+    if (cpuCompiledModel != nullptr) {
+      LiteRtDestroyCompiledModel(cpuCompiledModel);
+    }
+    throwIfLiteRtError(compileStatus, "compile CPU fallback");
+  }
+
+  std::vector<LiteRtTensorBuffer> cpuInputBuffers;
+  std::vector<LiteRtTensorBuffer> cpuOutputBuffers;
+  try {
+    LiteRtSignature signature = nullptr;
+    throwIfLiteRtError(LiteRtGetModelSignature(_model, 0, &signature),
+                       "read CPU fallback signature");
+    cpuInputBuffers = createManagedTensorBuffers(_environment, cpuCompiledModel, signature, true);
+    cpuOutputBuffers = createManagedTensorBuffers(_environment, cpuCompiledModel, signature, false);
+  } catch (...) {
+    destroyTensorBuffers(cpuOutputBuffers);
+    destroyTensorBuffers(cpuInputBuffers);
+    LiteRtDestroyCompiledModel(cpuCompiledModel);
+    throw;
+  }
+
+  destroyTensorBuffers(_outputBuffers);
+  destroyTensorBuffers(_inputBuffers);
+  LiteRtDestroyCompiledModel(_compiledModel);
+  _compiledModel = cpuCompiledModel;
+  _inputBuffers = std::move(cpuInputBuffers);
+  _outputBuffers = std::move(cpuOutputBuffers);
+  _outputArrayBuffers.assign(_outputBuffers.size(), nullptr);
+  _delegates.clear();
+}
+
+[[noreturn]] void HybridTfliteModel::throwRunError(LiteRtStatus status) const {
+  std::string message =
+      "LiteRT: Failed to run model: " + std::string(LiteRtGetStatusString(status)) + " (" +
+      std::to_string(static_cast<int>(status)) + ")";
+  if (!_inputs.empty() && _inputs.front().dataType == TensorDataType::FLOAT16) {
+    message += ". The model uses float16 input activations. LiteRT 2.1.6 CPU "
+               "kernels do not support float16 Conv2D activations, and the GPU "
+               "accelerator may reject a graph that requires CPU fallback. Export "
+               "the model with float32 input/output tensors and float16-compressed "
+               "weights, or use the float32 model.";
+  }
+  throw std::runtime_error(message);
+}
+
+std::vector<std::shared_ptr<ArrayBuffer>>
+HybridTfliteModel::runLocked(const std::vector<std::shared_ptr<ArrayBuffer>>& input) {
   std::lock_guard<std::mutex> lock(_inferenceMutex);
   copyInputBuffers(input);
-  throwIfLiteRtError(
+  LiteRtStatus status =
       LiteRtRunCompiledModel(_compiledModel, 0, _inputBuffers.size(), _inputBuffers.data(),
-                             _outputBuffers.size(), _outputBuffers.data()),
-      "run model");
+                             _outputBuffers.size(), _outputBuffers.data());
+  if (status != kLiteRtStatusOk && !_delegates.empty()) {
+    rebuildForCpu();
+    copyInputBuffers(input);
+    status = LiteRtRunCompiledModel(_compiledModel, 0, _inputBuffers.size(), _inputBuffers.data(),
+                                    _outputBuffers.size(), _outputBuffers.data());
+  }
+  if (status != kLiteRtStatusOk) {
+    throwRunError(status);
+  }
   return copyOutputBuffers();
 }
 

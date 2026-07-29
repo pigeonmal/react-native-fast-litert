@@ -33,11 +33,16 @@ public:
   std::shared_ptr<Promise<std::vector<std::shared_ptr<ArrayBuffer>>>>
   run(const std::vector<std::shared_ptr<ArrayBuffer>>& input) override;
 
+protected:
+  size_t getExternalMemorySize() noexcept override;
+
 private:
   std::vector<std::shared_ptr<ArrayBuffer>>
   cloneInputBuffers(const std::vector<std::shared_ptr<ArrayBuffer>>& input) const;
   void copyInputBuffers(const std::vector<std::shared_ptr<ArrayBuffer>>& input);
   std::vector<std::shared_ptr<ArrayBuffer>> copyOutputBuffers();
+  void rebuildForCpu();
+  [[noreturn]] void throwRunError(LiteRtStatus status) const;
   std::vector<std::shared_ptr<ArrayBuffer>>
   runLocked(const std::vector<std::shared_ptr<ArrayBuffer>>& input);
 

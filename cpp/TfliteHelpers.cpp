@@ -87,8 +87,7 @@ TensorDataType getTensorDataType(LiteRtElementType dataType) {
 
 bool modelContainsInt16Tensors(LiteRtModel model) {
   LiteRtParamIndex subgraphCount = 0;
-  throwIfLiteRtError(LiteRtGetNumModelSubgraphs(model, &subgraphCount),
-                     "read model subgraphs");
+  throwIfLiteRtError(LiteRtGetNumModelSubgraphs(model, &subgraphCount), "read model subgraphs");
 
   for (LiteRtParamIndex subgraphIndex = 0; subgraphIndex < subgraphCount; ++subgraphIndex) {
     LiteRtSubgraph subgraph = nullptr;
@@ -98,15 +97,13 @@ bool modelContainsInt16Tensors(LiteRtModel model) {
     LiteRtParamIndex operationCount = 0;
     throwIfLiteRtError(LiteRtGetNumSubgraphOps(subgraph, &operationCount),
                        "read subgraph operations");
-    for (LiteRtParamIndex operationIndex = 0; operationIndex < operationCount;
-         ++operationIndex) {
+    for (LiteRtParamIndex operationIndex = 0; operationIndex < operationCount; ++operationIndex) {
       LiteRtOp operation = nullptr;
       throwIfLiteRtError(LiteRtGetSubgraphOp(subgraph, operationIndex, &operation),
                          "read subgraph operation");
 
       LiteRtParamIndex inputCount = 0;
-      throwIfLiteRtError(LiteRtGetNumOpInputs(operation, &inputCount),
-                         "read operation inputs");
+      throwIfLiteRtError(LiteRtGetNumOpInputs(operation, &inputCount), "read operation inputs");
       for (LiteRtParamIndex inputIndex = 0; inputIndex < inputCount; ++inputIndex) {
         LiteRtTensor tensor = nullptr;
         throwIfLiteRtError(LiteRtGetOpInput(operation, inputIndex, &tensor),
@@ -117,8 +114,7 @@ bool modelContainsInt16Tensors(LiteRtModel model) {
       }
 
       LiteRtParamIndex outputCount = 0;
-      throwIfLiteRtError(LiteRtGetNumOpOutputs(operation, &outputCount),
-                         "read operation outputs");
+      throwIfLiteRtError(LiteRtGetNumOpOutputs(operation, &outputCount), "read operation outputs");
       for (LiteRtParamIndex outputIndex = 0; outputIndex < outputCount; ++outputIndex) {
         LiteRtTensor tensor = nullptr;
         throwIfLiteRtError(LiteRtGetOpOutput(operation, outputIndex, &tensor),
@@ -130,6 +126,63 @@ bool modelContainsInt16Tensors(LiteRtModel model) {
     }
   }
   return false;
+}
+
+std::vector<LiteRtTensorBuffer> createManagedTensorBuffers(LiteRtEnvironment environment,
+                                                           LiteRtCompiledModel compiledModel,
+                                                           LiteRtSignature signature, bool inputs) {
+  LiteRtParamIndex count = 0;
+  if (inputs) {
+    throwIfLiteRtError(LiteRtGetNumSignatureInputs(signature, &count), "read signature inputs");
+  } else {
+    throwIfLiteRtError(LiteRtGetNumSignatureOutputs(signature, &count), "read signature outputs");
+  }
+
+  std::vector<LiteRtTensorBuffer> buffers;
+  buffers.reserve(count);
+  try {
+    for (LiteRtParamIndex index = 0; index < count; ++index) {
+      LiteRtTensor tensor = nullptr;
+      if (inputs) {
+        throwIfLiteRtError(LiteRtGetSignatureInputTensorByIndex(signature, index, &tensor),
+                           "read signature input");
+      } else {
+        throwIfLiteRtError(LiteRtGetSignatureOutputTensorByIndex(signature, index, &tensor),
+                           "read signature output");
+      }
+
+      LiteRtRankedTensorType tensorType{};
+      throwIfLiteRtError(LiteRtGetRankedTensorType(tensor, &tensorType), "read tensor type");
+
+      LiteRtTensorBufferRequirements requirements = nullptr;
+      if (inputs) {
+        throwIfLiteRtError(
+            LiteRtGetCompiledModelInputBufferRequirements(compiledModel, 0, index, &requirements),
+            "read input buffer requirements");
+      } else {
+        throwIfLiteRtError(
+            LiteRtGetCompiledModelOutputBufferRequirements(compiledModel, 0, index, &requirements),
+            "read output buffer requirements");
+      }
+
+      LiteRtTensorBuffer buffer = nullptr;
+      throwIfLiteRtError(LiteRtCreateManagedTensorBufferFromRequirements(environment, &tensorType,
+                                                                         requirements, &buffer),
+                         "create tensor buffer");
+      buffers.push_back(buffer);
+    }
+    return buffers;
+  } catch (...) {
+    destroyTensorBuffers(buffers);
+    throw;
+  }
+}
+
+void destroyTensorBuffers(std::vector<LiteRtTensorBuffer>& buffers) noexcept {
+  for (LiteRtTensorBuffer buffer : buffers) {
+    LiteRtDestroyTensorBuffer(buffer);
+  }
+  buffers.clear();
 }
 
 } // namespace margelo::nitro::tflite

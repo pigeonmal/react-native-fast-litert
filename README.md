@@ -95,11 +95,17 @@ If you're using this model with a [VisionCamera](https://github.com/mrousavy/rea
 Use [vision-camera-resizer](https://visioncamera.margelo.com/api/react-native-vision-camera-resizer) to do the conversion:
 
 ```tsx
-import { Camera, useFrameOutput } from 'react-native-vision-camera'
+import {
+  Camera,
+  useAsyncRunner,
+  useFrameOutput,
+} from 'react-native-vision-camera'
 import { useResizer } from 'react-native-vision-camera-resizer'
 import { useTensorflowModel } from 'react-native-fast-litert'
 
 const objectDetection = useTensorflowModel(require('object_detection.tflite'))
+const model =
+  objectDetection.state === 'loaded' ? objectDetection.model : undefined
 
 // 1. Create a resizer that converts Frames to 192x192x3 (RGB, uint8)
 const { resizer } = useResizer({
@@ -109,36 +115,45 @@ const { resizer } = useResizer({
   dataType: 'uint8',
 })
 
+// 2. Keep camera delivery responsive when inference is slower than capture.
+const inferenceRunner = useAsyncRunner()
+
 const frameOutput = useFrameOutput({
   pixelFormat: 'yuv',
   onFrame(frame) {
     'worklet'
-    if (objectDetection.state !== 'loaded' || resizer == null) {
+    if (model == null || resizer == null) {
       frame.dispose()
       return
     }
 
-    // 2. Resize the Frame to the model's input size
-    const resized = resizer.resize(frame)
-    frame.dispose()
-    const data = new Uint8Array(resized.getPixelBuffer())
-    resized.dispose()
+    const accepted = inferenceRunner.runAsync(() => {
+      'worklet'
+      try {
+        // 3. Resize on the GPU and retain the pooled GPUFrame until inference
+        // has consumed its pixel buffer.
+        const resized = resizer.resize(frame)
+        try {
+          const outputs = model.runSync([resized.getPixelBuffer()])
 
-    // 3. Extract the exact slice of the underlying ArrayBuffer
-    const inputBuffer = data.buffer.slice(
-      data.byteOffset,
-      data.byteOffset + data.byteLength
-    )
+          // 4. Interpret outputs according to the model metadata.
+          const detection_boxes = new Float32Array(outputs[0]!)
+          const detection_classes = new Float32Array(outputs[1]!)
+          const detection_scores = new Float32Array(outputs[2]!)
+          const num_detections = new Float32Array(outputs[3]!)
+          console.log(`Detected ${num_detections[0]} objects!`)
+        } finally {
+          resized.dispose()
+        }
+      } finally {
+        frame.dispose()
+      }
+    })
 
-    // 4. Run model with given input buffer synchronously
-    const outputs = objectDetection.model.runSync([inputBuffer])
-
-    // 5. Interpret outputs accordingly
-    const detection_boxes = new Float32Array(outputs[0]!)
-    const detection_classes = new Float32Array(outputs[1]!)
-    const detection_scores = new Float32Array(outputs[2]!)
-    const num_detections = new Float32Array(outputs[3]!)
-    console.log(`Detected ${num_detections[0]} objects!`)
+    // The runner is busy. Drop this frame instead of blocking camera delivery.
+    if (!accepted) {
+      frame.dispose()
+    }
   },
 })
 
@@ -147,6 +162,12 @@ return <Camera device="back" isActive={true} outputs={[frameOutput]} {...otherPr
 
 > [!NOTE]
 > Unlike v4, VisionCamera v5 no longer requires boxing the model with `NitroModules.box()`. Since v5 is built on Nitro Modules and uses [react-native-worklets](https://docs.swmansion.com/react-native-worklets/), worklets can access HybridObjects like the TFLite model directly.
+
+The resizer configuration must exactly match `model.inputs[0]`. A model whose
+input is `[1, 416, 416, 3]` and `float32` needs a `416 × 416`, interleaved,
+`float32` resizer output. A filename containing `float16` often describes
+compressed weights, not the input tensor type; inspect `model.inputs` instead
+of deriving the data type from the filename.
 
 ### GPU acceleration
 
@@ -169,6 +190,12 @@ const cpuModel = await loadTensorflowModel(
 The platform-specific `metal` and `android-gpu` names remain aliases for
 `gpu`. The old `core-ml` and `nnapi` delegates are not part of LiteRT 2.x's
 CompiledModel API.
+
+LiteRT's GPU accelerator supports only the compatible parts of a graph.
+Dynamic post-processing tensors can force a CPU fallback, while fully float16
+activation graphs can fail on both backends. For mobile GPU models, prefer
+float32 input/output tensors with float16-compressed weights. Always configure
+the resizer from `model.inputs`; do not infer the tensor type from the filename.
 
 On Android 12 and newer, GPU access can additionally require vendor native
 libraries to be declared in the app manifest.

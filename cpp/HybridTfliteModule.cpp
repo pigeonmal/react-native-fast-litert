@@ -68,11 +68,9 @@ using EnvironmentHandle = LiteRtHandle<LiteRtEnvironment, LiteRtDestroyEnvironme
 using ModelHandle = LiteRtHandle<LiteRtModel, LiteRtDestroyModel>;
 using OptionsHandle = LiteRtHandle<LiteRtOptions, LiteRtDestroyOptions>;
 using CompiledModelHandle = LiteRtHandle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>;
-using TensorBufferHandle = LiteRtHandle<LiteRtTensorBuffer, LiteRtDestroyTensorBuffer>;
 
 bool isGpuDelegate(TensorflowModelDelegate delegate) {
-  return delegate == TensorflowModelDelegate::GPU ||
-         delegate == TensorflowModelDelegate::METAL ||
+  return delegate == TensorflowModelDelegate::GPU || delegate == TensorflowModelDelegate::METAL ||
          delegate == TensorflowModelDelegate::ANDROID_GPU;
 }
 
@@ -99,9 +97,8 @@ void validateDelegates(const std::vector<TensorflowModelDelegate>& delegates) {
           "Use the cross-platform \"gpu\" accelerator instead.");
     }
     if (delegate == TensorflowModelDelegate::NNAPI) {
-      throw std::runtime_error(
-          "LiteRT: NNAPI is not available in LiteRT 2.x CompiledModel. "
-          "Use the cross-platform \"gpu\" accelerator instead.");
+      throw std::runtime_error("LiteRT: NNAPI is not available in LiteRT 2.x CompiledModel. "
+                               "Use the cross-platform \"gpu\" accelerator instead.");
     }
 #if defined(ANDROID)
     if (delegate == TensorflowModelDelegate::METAL) {
@@ -110,9 +107,8 @@ void validateDelegates(const std::vector<TensorflowModelDelegate>& delegates) {
     }
 #elif defined(__APPLE__)
     if (delegate == TensorflowModelDelegate::ANDROID_GPU) {
-      throw std::runtime_error(
-          "LiteRT: The \"android-gpu\" alias is only available on Android. "
-          "Use \"gpu\" on cross-platform code.");
+      throw std::runtime_error("LiteRT: The \"android-gpu\" alias is only available on Android. "
+                               "Use \"gpu\" on cross-platform code.");
     }
 #endif
   }
@@ -137,11 +133,9 @@ Tensor createTensor(LiteRtTensor tensor) {
 std::vector<Tensor> getSignatureTensors(LiteRtSignature signature, bool inputs) {
   LiteRtParamIndex count = 0;
   if (inputs) {
-    throwIfLiteRtError(LiteRtGetNumSignatureInputs(signature, &count),
-                       "read signature inputs");
+    throwIfLiteRtError(LiteRtGetNumSignatureInputs(signature, &count), "read signature inputs");
   } else {
-    throwIfLiteRtError(LiteRtGetNumSignatureOutputs(signature, &count),
-                       "read signature outputs");
+    throwIfLiteRtError(LiteRtGetNumSignatureOutputs(signature, &count), "read signature outputs");
   }
 
   std::vector<Tensor> tensors;
@@ -160,74 +154,13 @@ std::vector<Tensor> getSignatureTensors(LiteRtSignature signature, bool inputs) 
   return tensors;
 }
 
-std::vector<TensorBufferHandle> createTensorBuffers(LiteRtEnvironment environment,
-                                                    LiteRtCompiledModel compiledModel,
-                                                    LiteRtSignature signature, bool inputs) {
-  LiteRtParamIndex count = 0;
-  if (inputs) {
-    throwIfLiteRtError(LiteRtGetNumSignatureInputs(signature, &count),
-                       "read signature inputs");
-  } else {
-    throwIfLiteRtError(LiteRtGetNumSignatureOutputs(signature, &count),
-                       "read signature outputs");
-  }
-
-  std::vector<TensorBufferHandle> buffers;
-  buffers.reserve(count);
-  for (LiteRtParamIndex index = 0; index < count; ++index) {
-    LiteRtTensor tensor = nullptr;
-    if (inputs) {
-      throwIfLiteRtError(LiteRtGetSignatureInputTensorByIndex(signature, index, &tensor),
-                         "read signature input");
-    } else {
-      throwIfLiteRtError(LiteRtGetSignatureOutputTensorByIndex(signature, index, &tensor),
-                         "read signature output");
-    }
-
-    LiteRtRankedTensorType tensorType{};
-    throwIfLiteRtError(LiteRtGetRankedTensorType(tensor, &tensorType), "read tensor type");
-
-    LiteRtTensorBufferRequirements requirements = nullptr;
-    if (inputs) {
-      throwIfLiteRtError(
-          LiteRtGetCompiledModelInputBufferRequirements(compiledModel, 0, index,
-                                                        &requirements),
-          "read input buffer requirements");
-    } else {
-      throwIfLiteRtError(
-          LiteRtGetCompiledModelOutputBufferRequirements(compiledModel, 0, index,
-                                                         &requirements),
-          "read output buffer requirements");
-    }
-
-    TensorBufferHandle buffer;
-    throwIfLiteRtError(
-        LiteRtCreateManagedTensorBufferFromRequirements(environment, &tensorType, requirements,
-                                                        buffer.out()),
-        "create tensor buffer");
-    buffers.push_back(std::move(buffer));
-  }
-  return buffers;
-}
-
-std::vector<LiteRtTensorBuffer> releaseTensorBuffers(
-    std::vector<TensorBufferHandle>& handles) {
-  std::vector<LiteRtTensorBuffer> buffers;
-  buffers.reserve(handles.size());
-  for (TensorBufferHandle& handle : handles) {
-    buffers.push_back(handle.release());
-  }
-  return buffers;
-}
-
 } // namespace
 
 std::shared_ptr<HybridTfliteModelSpec>
 HybridTfliteModule::createModel(const std::shared_ptr<ArrayBuffer>& modelData,
                                 const std::vector<TensorflowModelDelegate>& delegates) {
   validateDelegates(delegates);
-  const bool gpuRequested =
-      std::any_of(delegates.begin(), delegates.end(), isGpuDelegate);
+  const bool gpuRequested = std::any_of(delegates.begin(), delegates.end(), isGpuDelegate);
 
   EnvironmentHandle environment;
 #if defined(__APPLE__)
@@ -249,13 +182,12 @@ HybridTfliteModule::createModel(const std::shared_ptr<ArrayBuffer>& modelData,
 #endif
   throwIfLiteRtError(
       LiteRtCreateEnvironment(environmentOptionCount, environmentOptions, environment.out()),
-                     "create environment");
+      "create environment");
 
   ModelHandle model;
-  throwIfLiteRtError(
-      LiteRtCreateModelFromBuffer(environment.get(), modelData->data(), modelData->size(),
-                                  model.out()),
-      "create model from data");
+  throwIfLiteRtError(LiteRtCreateModelFromBuffer(environment.get(), modelData->data(),
+                                                 modelData->size(), model.out()),
+                     "create model from data");
 
   LiteRtParamIndex signatureCount = 0;
   throwIfLiteRtError(LiteRtGetNumModelSignatures(model.get(), &signatureCount),
@@ -265,8 +197,7 @@ HybridTfliteModule::createModel(const std::shared_ptr<ArrayBuffer>& modelData,
   }
 
   LiteRtSignature signature = nullptr;
-  throwIfLiteRtError(LiteRtGetModelSignature(model.get(), 0, &signature),
-                     "read model signature");
+  throwIfLiteRtError(LiteRtGetModelSignature(model.get(), 0, &signature), "read model signature");
   std::vector<Tensor> inputs = getSignatureTensors(signature, true);
   std::vector<Tensor> outputs = getSignatureTensors(signature, false);
 
@@ -277,8 +208,7 @@ HybridTfliteModule::createModel(const std::shared_ptr<ArrayBuffer>& modelData,
   throwIfLiteRtError(LiteRtCreateOptions(options.out()), "create compilation options");
   auto setAccelerators = [&options](bool gpu) {
     const LiteRtHwAcceleratorSet accelerators =
-        gpu ? (kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorCpu)
-            : kLiteRtHwAcceleratorCpu;
+        gpu ? (kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorCpu) : kLiteRtHwAcceleratorCpu;
     throwIfLiteRtError(LiteRtSetOptionsHardwareAccelerators(options.get(), accelerators),
                        "select hardware accelerators");
   };
@@ -286,8 +216,7 @@ HybridTfliteModule::createModel(const std::shared_ptr<ArrayBuffer>& modelData,
   setAccelerators(useGpu);
   CompiledModelHandle compiledModel;
   LiteRtStatus compileStatus =
-      LiteRtCreateCompiledModel(environment.get(), model.get(), options.get(),
-                                compiledModel.out());
+      LiteRtCreateCompiledModel(environment.get(), model.get(), options.get(), compiledModel.out());
   if (compileStatus != kLiteRtStatusOk && useGpu) {
     useGpu = false;
     setAccelerators(false);
@@ -296,17 +225,23 @@ HybridTfliteModule::createModel(const std::shared_ptr<ArrayBuffer>& modelData,
   }
   throwIfLiteRtError(compileStatus, "compile model");
 
-  std::vector<TensorBufferHandle> inputBufferHandles =
-      createTensorBuffers(environment.get(), compiledModel.get(), signature, true);
-  std::vector<TensorBufferHandle> outputBufferHandles =
-      createTensorBuffers(environment.get(), compiledModel.get(), signature, false);
+  std::vector<LiteRtTensorBuffer> inputBuffers =
+      createManagedTensorBuffers(environment.get(), compiledModel.get(), signature, true);
+  std::vector<LiteRtTensorBuffer> outputBuffers;
+  try {
+    outputBuffers =
+        createManagedTensorBuffers(environment.get(), compiledModel.get(), signature, false);
+  } catch (...) {
+    destroyTensorBuffers(inputBuffers);
+    throw;
+  }
 
-  std::vector<TensorflowModelDelegate> resolvedDelegates = useGpu ? delegates
-                                                                  : std::vector<TensorflowModelDelegate>{};
+  std::vector<TensorflowModelDelegate> resolvedDelegates =
+      useGpu ? delegates : std::vector<TensorflowModelDelegate>{};
   return std::make_shared<HybridTfliteModel>(
-      environment.release(), model.release(), compiledModel.release(),
-      releaseTensorBuffers(inputBufferHandles), releaseTensorBuffers(outputBufferHandles),
-      std::move(inputs), std::move(outputs), modelData, std::move(resolvedDelegates));
+      environment.release(), model.release(), compiledModel.release(), std::move(inputBuffers),
+      std::move(outputBuffers), std::move(inputs), std::move(outputs), modelData,
+      std::move(resolvedDelegates));
 }
 
 } // namespace margelo::nitro::tflite
