@@ -1,7 +1,7 @@
 export type ConfigProps = {
   /**
-   * Whether to enable the CoreML GPU acceleration delegate for iOS, or not.
-   * @default false
+   * @deprecated LiteRT 2.x uses its bundled Metal accelerator automatically.
+   * This option is retained as a no-op so existing Expo configuration remains valid.
    */
   enableCoreMLDelegate?: boolean
   /**
@@ -20,7 +20,7 @@ export type ConfigProps = {
    * You can include more native libraries if needed.
    * ```json
    * [
-   *   "react-native-fast-tflite",
+   *   "react-native-fast-litert",
    *   {
    *     "enableAndroidGpuLibraries": ["libOpenCL-pixel.so", "libGLES_mali.so"]
    *   }

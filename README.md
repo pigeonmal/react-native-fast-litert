@@ -1,18 +1,12 @@
-<a href="https://margelo.com">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./img/banner-dark.webp" />
-    <source media="(prefers-color-scheme: light)" srcset="./img/banner-light.webp" />
-    <img alt="Fast TFLite" src="./img/banner-light.webp" />
-  </picture>
-</a>
+# react-native-fast-litert
 
-A high-performance [TensorFlow Lite](https://www.tensorflow.org/lite) library for React Native, built with [Nitro Modules](https://github.com/mrousavy/nitro).
+A high-performance [LiteRT](https://developers.google.com/edge/litert) library for React Native, built with [Nitro Modules](https://github.com/mrousavy/nitro).
 
 - ⚡ Powered by Nitro Modules
-- 💨 Zero-copy ArrayBuffers
-- 🔧 Uses the low-level C/C++ TensorFlow Lite core API for direct memory access
+- 💨 Direct ArrayBuffer input and output
+- 🔧 Uses the LiteRT 2.1.6 C++ CompiledModel runtime
 - 🔄 Supports swapping out TensorFlow Models at runtime
-- 🖥️ Supports GPU-accelerated delegates (CoreML/Metal/OpenGL)
+- 🖥️ Prefers GPU acceleration through Metal on iOS and OpenCL/OpenGL on Android
 - 📸 Easy [VisionCamera](https://github.com/mrousavy/react-native-vision-camera) integration
 
 ## Migrating from v2
@@ -23,7 +17,7 @@ If you are upgrading from v2, see the [Migration Guide](./MIGRATION_V2_TO_V3.md)
 
 1. Add the npm packages:
    ```sh
-   yarn add react-native-fast-tflite react-native-nitro-modules
+   yarn add react-native-fast-litert react-native-nitro-modules
    ```
 2. In `metro.config.js`, add `tflite` as a supported asset extension:
    ```js
@@ -34,8 +28,12 @@ If you are upgrading from v2, see the [Migration Guide](./MIGRATION_V2_TO_V3.md)
        // ...
    ```
    This allows you to drop `.tflite` files into your app and swap them out at runtime without rebuilding. 🔥
-3. (Optional) To enable GPU delegates, see [Using GPU Delegates](#using-gpu-delegates) below.
+3. GPU acceleration is bundled and preferred by default. See [GPU acceleration](#gpu-acceleration) for Android vendor-library configuration.
 4. Run your app (`yarn android` / `npx pod-install && yarn ios`)
+
+LiteRT 2.1.6 requires iOS 15 or newer. Android supports `armeabi-v7a`,
+`arm64-v8a`, and `x86_64`; LiteRT 2.1.6 does not publish an Android `x86`
+runtime.
 
 ## Usage
 
@@ -45,10 +43,10 @@ If you are upgrading from v2, see the [Migration Guide](./MIGRATION_V2_TO_V3.md)
 
    ```ts
    // Option A: Standalone Function
-   const model = await loadTensorflowModel(require('assets/my-model.tflite'), [])
+   const model = await loadTensorflowModel(require('assets/my-model.tflite'))
 
    // Option B: Hook in a Function Component
-   const plugin = useTensorflowModel(require('assets/my-model.tflite'), [])
+   const plugin = useTensorflowModel(require('assets/my-model.tflite'))
    ```
 
 4. Call the Model:
@@ -64,13 +62,12 @@ Models can be loaded from the React Native bundle via `require(..)`, or any URI/
 
 ```ts
 // Asset from React Native Bundle
-loadTensorflowModel(require('assets/my-model.tflite'), [])
+loadTensorflowModel(require('assets/my-model.tflite'))
 // File on the local filesystem
-loadTensorflowModel({ url: 'file:///var/mobile/.../my-model.tflite' }, [])
+loadTensorflowModel({ url: 'file:///var/mobile/.../my-model.tflite' })
 // Remote URL
 loadTensorflowModel(
-  { url: 'https://tfhub.dev/google/lite-model/object_detection_v1.tflite' },
-  []
+  { url: 'https://tfhub.dev/google/lite-model/object_detection_v1.tflite' }
 )
 ```
 
@@ -100,9 +97,9 @@ Use [vision-camera-resizer](https://visioncamera.margelo.com/api/react-native-vi
 ```tsx
 import { Camera, useFrameOutput } from 'react-native-vision-camera'
 import { useResizer } from 'react-native-vision-camera-resizer'
-import { useTensorflowModel } from 'react-native-fast-tflite'
+import { useTensorflowModel } from 'react-native-fast-litert'
 
-const objectDetection = useTensorflowModel(require('object_detection.tflite'), [])
+const objectDetection = useTensorflowModel(require('object_detection.tflite'))
 
 // 1. Create a resizer that converts Frames to 192x192x3 (RGB, uint8)
 const { resizer } = useResizer({
@@ -151,60 +148,32 @@ return <Camera device="back" isActive={true} outputs={[frameOutput]} {...otherPr
 > [!NOTE]
 > Unlike v4, VisionCamera v5 no longer requires boxing the model with `NitroModules.box()`. Since v5 is built on Nitro Modules and uses [react-native-worklets](https://docs.swmansion.com/react-native-worklets/), worklets can access HybridObjects like the TFLite model directly.
 
-### Using GPU Delegates
+### GPU acceleration
 
-GPU Delegates offer faster, GPU-accelerated computation. There are multiple delegates available:
+`loadTensorflowModel(...)` and `useTensorflowModel(...)` default to `['gpu']`.
+LiteRT compiles supported operations for Metal on iOS or OpenCL/OpenGL on
+Android, while unsupported operations remain on CPU. If GPU compilation is not
+safe or fails, model creation automatically retries on CPU.
 
-#### CoreML (iOS)
+```ts
+// GPU preferred, CPU fallback
+const model = await loadTensorflowModel(require('assets/my-model.tflite'))
 
-##### Expo
-
-Use the config plugin in your expo config (`app.json`, `app.config.json` or `app.config.js`):
-
-```json
-{
-  "name": "my app",
-  "plugins": [
-    [
-      "react-native-fast-tflite",
-      {
-        "enableCoreMLDelegate": true
-      }
-    ]
-  ]
-}
+// Explicitly require CPU
+const cpuModel = await loadTensorflowModel(
+  require('assets/my-model.tflite'),
+  []
+)
 ```
 
-##### Bare React Native
+The platform-specific `metal` and `android-gpu` names remain aliases for
+`gpu`. The old `core-ml` and `nnapi` delegates are not part of LiteRT 2.x's
+CompiledModel API.
 
-1. Set `$EnableCoreMLDelegate` to `true` in your `Podfile`:
+On Android 12 and newer, GPU access can additionally require vendor native
+libraries to be declared in the app manifest.
 
-   ```ruby
-   $EnableCoreMLDelegate=true
-
-   # rest of your podfile...
-   ```
-
-2. Open your iOS project in Xcode and add the `CoreML` framework under **General → Frameworks, Libraries and Embedded Content**.
-3. Re-install Pods and build:
-   ```sh
-   cd ios && pod install && cd ..
-   yarn ios
-   ```
-4. Use the CoreML Delegate:
-   ```ts
-   const model = await loadTensorflowModel(
-     require('assets/my-model.tflite'),
-     ['core-ml']
-   )
-   ```
-
-> [!NOTE]
-> Not all model operations are supported on the CoreML delegate. Make sure your model is compatible.
-
-#### Android GPU/NNAPI (Android)
-
-To enable GPU or NNAPI on Android, you **may** need to include native libraries, especially on Android 12+.
+#### Expo
 
 ##### Expo
 
@@ -215,7 +184,7 @@ Use the config plugin in your expo config (`app.json`, `app.config.json` or `app
   "name": "my app",
   "plugins": [
     [
-      "react-native-fast-tflite",
+      "react-native-fast-litert",
       {
         "enableAndroidGpuLibraries": true
       }
@@ -231,7 +200,7 @@ By default, when enabled, `libOpenCL.so` will be included in your `AndroidManife
   "name": "my app",
   "plugins": [
     [
-      "react-native-fast-tflite",
+      "react-native-fast-litert",
       {
         "enableAndroidGpuLibraries": ["libOpenCL-pixel.so", "libGLES_mali.so"]
       }
@@ -254,29 +223,17 @@ Add any needed entries to your `AndroidManifest.xml`:
 <uses-native-library android:name="libPVROCL.so" android:required="false" />
 ```
 
-Then use the delegate:
-
-```ts
-const model = await loadTensorflowModel(
-  require('assets/my-model.tflite'),
-  ['android-gpu']
-)
-// or
-const model = await loadTensorflowModel(
-  require('assets/my-model.tflite'),
-  ['nnapi']
-)
-```
-
-> [!WARNING]
-> NNAPI is deprecated on Android 15. GPU delegate is preferred.
-
 > [!NOTE]
 > Android does not officially support OpenCL, but most GPU vendors do.
 
+The implementation follows the official
+[LiteRT C++ CompiledModel API](https://developers.google.com/edge/litert/next/cpp)
+and bundles Google's
+[prebuilt GPU accelerators](https://developers.google.com/edge/litert/next/cpp_sdk#prebuilt-gpu-accelerators).
+
 ## Community Discord
 
-[Join the Margelo Community Discord](https://discord.gg/6CSHz2qAvA) to chat about react-native-fast-tflite or other Margelo libraries.
+[Join the Margelo Community Discord](https://discord.gg/6CSHz2qAvA) to chat about React Native performance libraries.
 
 ## Adopting at scale
 
@@ -286,7 +243,9 @@ const model = await loadTensorflowModel(
 
 This library is provided _as is_, I work on it in my free time.
 
-If you're integrating react-native-fast-tflite in a production app, consider [funding this project](https://github.com/sponsors/mrousavy) and <a href="mailto:me@mrousavy.com?subject=Adopting react-native-fast-tflite at scale">contact me</a> to receive premium enterprise support, help with issues, prioritize bugfixes, request features, and more.
+This project is based on the original
+[`react-native-fast-tflite`](https://github.com/mrousavy/react-native-fast-tflite)
+work by Marc Rousavy and contributors.
 
 ## Contributing
 

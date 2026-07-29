@@ -1,174 +1,135 @@
 #include "TfliteHelpers.hpp"
 
-#if defined(ANDROID)
-#include <tflite/c/c_api.h>
-#include <tflite/delegates/gpu/delegate.h>
-#include <tflite/delegates/nnapi/nnapi_delegate_c_api.h>
-#elif defined(__APPLE__)
-#include <TensorFlowLiteC/TensorFlowLiteC.h>
-#if FAST_TFLITE_ENABLE_CORE_ML
-#include <TensorFlowLiteCCoreML/TensorFlowLiteCCoreML.h>
-#endif
-#else
-#error "Invalid Platform!"
-#endif
+#include <litert/c/litert_model.h>
+
+#include <stdexcept>
 
 namespace margelo::nitro::tflite {
+namespace {
 
-// TODO: Remove this, this doesn't seem like a good idea at all.
-typedef float float32_t;
-typedef double float64_t;
+bool tensorIsInt16(LiteRtTensor tensor) {
+  LiteRtTensorTypeId typeId;
+  throwIfLiteRtError(LiteRtGetTensorTypeId(tensor, &typeId), "read tensor type");
 
-std::string tfLiteStatusToString(TfLiteStatus status) {
-  switch (status) {
-    case kTfLiteOk:
-      return "ok";
-    case kTfLiteError:
-      return "error";
-    case kTfLiteDelegateError:
-      return "delegate-error";
-    case kTfLiteApplicationError:
-      return "application-error";
-    case kTfLiteDelegateDataNotFound:
-      return "delegate-data-not-found";
-    case kTfLiteDelegateDataWriteError:
-      return "delegate-data-write-error";
-    case kTfLiteDelegateDataReadError:
-      return "delegate-data-read-error";
-    case kTfLiteUnresolvedOps:
-      return "unresolved-ops";
-    case kTfLiteCancelled:
-      return "cancelled";
+  if (typeId == kLiteRtRankedTensorType) {
+    LiteRtRankedTensorType type{};
+    throwIfLiteRtError(LiteRtGetRankedTensorType(tensor, &type), "read ranked tensor type");
+    return type.element_type == kLiteRtElementTypeInt16;
   }
-  return "unknown";
+
+  LiteRtUnrankedTensorType type{};
+  throwIfLiteRtError(LiteRtGetUnrankedTensorType(tensor, &type), "read unranked tensor type");
+  return type.element_type == kLiteRtElementTypeInt16;
 }
 
-TensorDataType getTensorDataType(TfLiteType dataType) {
+} // namespace
+
+void throwIfLiteRtError(LiteRtStatus status, const std::string& operation) {
+  if (status == kLiteRtStatusOk) {
+    return;
+  }
+  throw std::runtime_error("LiteRT: Failed to " + operation + ": " +
+                           std::string(LiteRtGetStatusString(status)) + " (" +
+                           std::to_string(static_cast<int>(status)) + ")");
+}
+
+TensorDataType getTensorDataType(LiteRtElementType dataType) {
   switch (dataType) {
-    case kTfLiteFloat16:
+    case kLiteRtElementTypeFloat16:
       return TensorDataType::FLOAT16;
-    case kTfLiteFloat32:
+    case kLiteRtElementTypeFloat32:
       return TensorDataType::FLOAT32;
-    case kTfLiteFloat64:
+    case kLiteRtElementTypeFloat64:
       return TensorDataType::FLOAT64;
-    case kTfLiteBFloat16:
+    case kLiteRtElementTypeBFloat16:
       return TensorDataType::BFLOAT16;
-    case kTfLiteInt4:
+    case kLiteRtElementTypeInt4:
       return TensorDataType::INT4;
-    case kTfLiteInt8:
+    case kLiteRtElementTypeInt8:
       return TensorDataType::INT8;
-    case kTfLiteInt16:
+    case kLiteRtElementTypeInt16:
       return TensorDataType::INT16;
-    case kTfLiteInt32:
+    case kLiteRtElementTypeInt32:
       return TensorDataType::INT32;
-    case kTfLiteInt64:
+    case kLiteRtElementTypeInt64:
       return TensorDataType::INT64;
-    case kTfLiteUInt8:
+    case kLiteRtElementTypeUInt8:
       return TensorDataType::UINT8;
-    case kTfLiteUInt16:
+    case kLiteRtElementTypeUInt16:
       return TensorDataType::UINT16;
-    case kTfLiteUInt32:
+    case kLiteRtElementTypeUInt32:
       return TensorDataType::UINT32;
-    case kTfLiteUInt64:
+    case kLiteRtElementTypeUInt64:
       return TensorDataType::UINT64;
-    case kTfLiteNoType:
+    case kLiteRtElementTypeNone:
       return TensorDataType::NONE;
-    case kTfLiteString:
+    case kLiteRtElementTypeTfString:
       return TensorDataType::STRING;
-    case kTfLiteBool:
+    case kLiteRtElementTypeBool:
       return TensorDataType::BOOL;
-    case kTfLiteComplex64:
+    case kLiteRtElementTypeComplex64:
       return TensorDataType::COMPLEX64;
-    case kTfLiteComplex128:
+    case kLiteRtElementTypeComplex128:
       return TensorDataType::COMPLEX128;
-    case kTfLiteResource:
+    case kLiteRtElementTypeTfResource:
       return TensorDataType::RESOURCE;
-    case kTfLiteVariant:
+    case kLiteRtElementTypeTfVariant:
       return TensorDataType::VARIANT;
+    case kLiteRtElementTypeInt2:
+    case kLiteRtElementTypeUInt4:
+    case kLiteRtElementTypeFloat8E4M3FN:
+    case kLiteRtElementTypeFloat8E5M2:
+      break;
   }
-  throw std::runtime_error("Unsupported TfLiteType: " + std::to_string(static_cast<int>(dataType)));
+  throw std::runtime_error("LiteRT: Unsupported tensor element type " +
+                           std::to_string(static_cast<int>(dataType)));
 }
 
-size_t getTFLTensorDataTypeSize(TfLiteType dataType) {
-  switch (dataType) {
-    case kTfLiteBool:
-      return sizeof(bool);
-    case kTfLiteFloat32:
-      return sizeof(float32_t);
-    case kTfLiteInt32:
-      return sizeof(int32_t);
-    case kTfLiteUInt8:
-      return sizeof(uint8_t);
-    case kTfLiteInt64:
-      return sizeof(int64_t);
-    case kTfLiteInt16:
-      return sizeof(int16_t);
-    case kTfLiteInt8:
-      return sizeof(int8_t);
-    case kTfLiteFloat64:
-      return sizeof(float64_t);
-    case kTfLiteUInt64:
-      return sizeof(uint64_t);
-    case kTfLiteUInt32:
-      return sizeof(uint32_t);
-    case kTfLiteUInt16:
-      return sizeof(uint16_t);
-    default:
-      throw std::runtime_error("Tensor DataType " + std::to_string(static_cast<int>(dataType)) +
-                               " is not supported!");
+bool modelContainsInt16Tensors(LiteRtModel model) {
+  LiteRtParamIndex subgraphCount = 0;
+  throwIfLiteRtError(LiteRtGetNumModelSubgraphs(model, &subgraphCount),
+                     "read model subgraphs");
+
+  for (LiteRtParamIndex subgraphIndex = 0; subgraphIndex < subgraphCount; ++subgraphIndex) {
+    LiteRtSubgraph subgraph = nullptr;
+    throwIfLiteRtError(LiteRtGetModelSubgraph(model, subgraphIndex, &subgraph),
+                       "read model subgraph");
+
+    LiteRtParamIndex operationCount = 0;
+    throwIfLiteRtError(LiteRtGetNumSubgraphOps(subgraph, &operationCount),
+                       "read subgraph operations");
+    for (LiteRtParamIndex operationIndex = 0; operationIndex < operationCount;
+         ++operationIndex) {
+      LiteRtOp operation = nullptr;
+      throwIfLiteRtError(LiteRtGetSubgraphOp(subgraph, operationIndex, &operation),
+                         "read subgraph operation");
+
+      LiteRtParamIndex inputCount = 0;
+      throwIfLiteRtError(LiteRtGetNumOpInputs(operation, &inputCount),
+                         "read operation inputs");
+      for (LiteRtParamIndex inputIndex = 0; inputIndex < inputCount; ++inputIndex) {
+        LiteRtTensor tensor = nullptr;
+        throwIfLiteRtError(LiteRtGetOpInput(operation, inputIndex, &tensor),
+                           "read operation input");
+        if (tensorIsInt16(tensor)) {
+          return true;
+        }
+      }
+
+      LiteRtParamIndex outputCount = 0;
+      throwIfLiteRtError(LiteRtGetNumOpOutputs(operation, &outputCount),
+                         "read operation outputs");
+      for (LiteRtParamIndex outputIndex = 0; outputIndex < outputCount; ++outputIndex) {
+        LiteRtTensor tensor = nullptr;
+        throwIfLiteRtError(LiteRtGetOpOutput(operation, outputIndex, &tensor),
+                           "read operation output");
+        if (tensorIsInt16(tensor)) {
+          return true;
+        }
+      }
+    }
   }
-}
-
-int getTensorTotalLength(const TfLiteTensor* tensor) {
-  int dimensions = TfLiteTensorNumDims(tensor);
-  if (dimensions < 1)
-    return 0;
-  int size = 1;
-  for (int32_t i = 0; i < dimensions; i++) {
-    size *= TfLiteTensorDim(tensor, i);
-  }
-  return size;
-}
-
-TfLiteDelegate* getCoreMLDelegate() {
-#ifdef __APPLE__
-#if FAST_TFLITE_ENABLE_CORE_ML
-  TfLiteCoreMlDelegateOptions delegateOptions;
-  TfLiteDelegate* coreMlDelegate = TfLiteCoreMlDelegateCreate(&delegateOptions);
-  return coreMlDelegate;
-#else // FAST_TFLITE_ENABLE_CORE_ML
-  throw std::runtime_error("The CoreML Delegate (\"core-ml\") is not enabled! "
-                           "Set `$EnableCoreMLDelegate` to `true` in your Podfile, and rebuild.");
-#endif
-#else // __APPLE__
-  throw std::runtime_error(
-      "The CoreML Delegate (\"core-ml\") is only supported on Apple Platforms!");
-#endif
-}
-
-TfLiteDelegate* getMetalDelegate() {
-  throw std::runtime_error("Metal Delegate is not yet supported!");
-}
-
-TfLiteDelegate* getNNAPIDelegate() {
-#ifdef ANDROID
-  TfLiteNnapiDelegateOptions delegateOptions = TfLiteNnapiDelegateOptionsDefault();
-  TfLiteDelegate* nnapiDelegate = TfLiteNnapiDelegateCreate(&delegateOptions);
-  return nnapiDelegate;
-#else // ANDROID
-  throw std::runtime_error("The NNAPI Delegate (\"nnapi\") is only supported on Android!");
-#endif
-}
-
-TfLiteDelegate* getAndroidGPUDelegate() {
-#ifdef ANDROID
-  TfLiteGpuDelegateOptionsV2 delegateOptions = TfLiteGpuDelegateOptionsV2Default();
-  TfLiteDelegate* gpuDelegate = TfLiteGpuDelegateV2Create(&delegateOptions);
-  return gpuDelegate;
-#else // ANDROID
-  throw std::runtime_error(
-      "The Android GPU Delegate (\"android-gpu\") is only supported on Android!");
-#endif
+  return false;
 }
 
 } // namespace margelo::nitro::tflite

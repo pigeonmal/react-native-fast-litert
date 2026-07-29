@@ -5,13 +5,12 @@ import {
   View,
   Text,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import {
   Tensor,
   TensorflowModel,
   useTensorflowModel,
-} from 'react-native-fast-tflite';
+} from 'react-native-fast-litert';
 import { NitroModules } from 'react-native-nitro-modules';
 import {
   Camera,
@@ -37,10 +36,7 @@ export default function App(): React.ReactNode {
   const device = useCameraDevice('back');
 
   // from https://www.kaggle.com/models/tensorflow/efficientdet/frameworks/tfLite
-  const model = useTensorflowModel(
-    require('../assets/efficientdet.tflite'),
-    Platform.OS === 'ios' ? ['core-ml'] : [],
-  );
+  const model = useTensorflowModel(require('../assets/efficientdet.tflite'));
   const actualModel = model.state === 'loaded' ? model.model : undefined;
   // Nitro HybridObjects use jsi::NativeState which is not directly accessible
   // in VisionCamera's worklet runtime. Boxing converts the HybridObject into a

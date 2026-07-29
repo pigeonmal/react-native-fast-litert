@@ -1,6 +1,7 @@
 import type { HybridObject } from 'react-native-nitro-modules'
 
 export type TensorflowModelDelegate =
+  | 'gpu'
   | 'metal'
   | 'core-ml'
   | 'nnapi'
@@ -51,8 +52,12 @@ export interface TfliteModule
    * TFLite model), and optionally a list of hardware
    * accelerating {@linkcode TensorflowModelDelegate}s.
    *
-   * If {@linkcode delegates} is empty (`[]`), the default
-   * CPU delegate will be used.
+   * Use `['gpu']` to prefer GPU execution with automatic CPU fallback.
+   * If {@linkcode delegates} is empty (`[]`), CPU execution is used.
+   *
+   * `metal` and `android-gpu` remain supported as platform-specific aliases
+   * for `gpu`. LiteRT 2.x does not support the legacy `core-ml` or `nnapi`
+   * delegate names.
    */
   createModel(
     modelData: ArrayBuffer,

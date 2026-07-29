@@ -1,48 +1,58 @@
 #pragma once
 
 #include "HybridTfliteModelSpec.hpp"
-#include <memory>
-#include <string>
-#include <unordered_map>
 
-#if defined(ANDROID)
-#include <tflite/c/c_api.h>
-#elif defined(__APPLE__)
-#include <TensorFlowLiteC/TensorFlowLiteC.h>
-#else
-#error "Invalid Platform!"
-#endif
+#include <litert/c/litert_compiled_model.h>
+#include <litert/c/litert_environment.h>
+#include <litert/c/litert_model.h>
+#include <litert/c/litert_tensor_buffer.h>
+
+#include <memory>
+#include <mutex>
+#include <vector>
 
 namespace margelo::nitro::tflite {
 
-class HybridTfliteModel : public HybridTfliteModelSpec {
+class HybridTfliteModel final : public HybridTfliteModelSpec {
 public:
-  explicit HybridTfliteModel(TfLiteInterpreter* interpreter, std::shared_ptr<ArrayBuffer> modelData,
+  explicit HybridTfliteModel(LiteRtEnvironment environment, LiteRtModel model,
+                             LiteRtCompiledModel compiledModel,
+                             std::vector<LiteRtTensorBuffer> inputBuffers,
+                             std::vector<LiteRtTensorBuffer> outputBuffers,
+                             std::vector<Tensor> inputs, std::vector<Tensor> outputs,
+                             std::shared_ptr<ArrayBuffer> modelData,
                              std::vector<TensorflowModelDelegate> delegates);
-  ~HybridTfliteModel();
+  ~HybridTfliteModel() override;
 
-  // Properties (from HybridTfliteModelSpec)
   std::vector<TensorflowModelDelegate> getDelegates() override;
   std::vector<Tensor> getInputs() override;
   std::vector<Tensor> getOutputs() override;
 
-  // Methods (from HybridTfliteModelSpec)
   std::vector<std::shared_ptr<ArrayBuffer>>
   runSync(const std::vector<std::shared_ptr<ArrayBuffer>>& input) override;
   std::shared_ptr<Promise<std::vector<std::shared_ptr<ArrayBuffer>>>>
   run(const std::vector<std::shared_ptr<ArrayBuffer>>& input) override;
 
 private:
+  std::vector<std::shared_ptr<ArrayBuffer>>
+  cloneInputBuffers(const std::vector<std::shared_ptr<ArrayBuffer>>& input) const;
   void copyInputBuffers(const std::vector<std::shared_ptr<ArrayBuffer>>& input);
-  void invoke();
   std::vector<std::shared_ptr<ArrayBuffer>> copyOutputBuffers();
-  std::shared_ptr<ArrayBuffer> getOutputBufferForTensor(const TfLiteTensor* tensor);
+  std::vector<std::shared_ptr<ArrayBuffer>>
+  runLocked(const std::vector<std::shared_ptr<ArrayBuffer>>& input);
 
 private:
-  TfLiteInterpreter* _interpreter = nullptr;
+  LiteRtEnvironment _environment = nullptr;
+  LiteRtModel _model = nullptr;
+  LiteRtCompiledModel _compiledModel = nullptr;
+  std::vector<LiteRtTensorBuffer> _inputBuffers;
+  std::vector<LiteRtTensorBuffer> _outputBuffers;
+  std::vector<Tensor> _inputs;
+  std::vector<Tensor> _outputs;
+  std::vector<std::shared_ptr<ArrayBuffer>> _outputArrayBuffers;
   std::vector<TensorflowModelDelegate> _delegates;
   std::shared_ptr<ArrayBuffer> _modelData;
-  std::unordered_map<std::string, std::shared_ptr<ArrayBuffer>> _outputBuffers;
+  std::mutex _inferenceMutex;
 };
 
 } // namespace margelo::nitro::tflite

@@ -8,7 +8,8 @@
 # VSCode
 .vscode/
 jsconfig.json
-
+.agents
+testmodels/
 # Xcode
 #
 build/

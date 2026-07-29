@@ -3,13 +3,12 @@ import {
   loadTensorflowModel,
   type TfliteModel,
   type Tensor,
-} from 'react-native-fast-tflite';
+} from 'react-native-fast-litert';
 import * as jpeg from 'jpeg-js';
 
 
 const MODEL_ASSET = require('../assets/efficientdet.tflite') as number;
 const QUANT_MODEL_ASSET = require('../assets/google-quant.tflite') as number;
-
 
 const CPU_DELEGATES: [] = [];
 
@@ -191,7 +190,7 @@ function expectAllFloat32Finite(buf: ArrayBuffer, tensor: Tensor): void {
   }
 }
 
-describe('react-native-fast-tflite (harness)', () => {
+describe('react-native-fast-litert (harness)', () => {
   describe('bundled EfficientDet model', () => {
     let model: TfliteModel;
 
@@ -406,4 +405,5 @@ describe('react-native-fast-tflite (harness)', () => {
     });
 
   });
+
 });

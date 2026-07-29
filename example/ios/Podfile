@@ -14,9 +14,6 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
-$EnableCoreMLDelegate=true
-$EnableMetalDelegate=true
-
 target 'TfliteExample' do
   config = use_native_modules!
 

@@ -1,26 +1,16 @@
 #pragma once
 
 #include "TensorDataType.hpp"
-#include <string>
 
-#if defined(ANDROID)
-#include <tflite/c/c_api.h>
-#elif defined(__APPLE__)
-#include <TensorFlowLiteC/TensorFlowLiteC.h>
-#else
-#error "Invalid Platform!"
-#endif
+#include <litert/c/litert_common.h>
+#include <litert/c/litert_model_types.h>
+
+#include <string>
 
 namespace margelo::nitro::tflite {
 
-std::string tfLiteStatusToString(TfLiteStatus status);
-TensorDataType getTensorDataType(TfLiteType dataType);
-size_t getTFLTensorDataTypeSize(TfLiteType dataType);
-int getTensorTotalLength(const TfLiteTensor* tensor);
-
-TfLiteDelegate* getCoreMLDelegate();
-TfLiteDelegate* getMetalDelegate();
-TfLiteDelegate* getNNAPIDelegate();
-TfLiteDelegate* getAndroidGPUDelegate();
+void throwIfLiteRtError(LiteRtStatus status, const std::string& operation);
+TensorDataType getTensorDataType(LiteRtElementType dataType);
+bool modelContainsInt16Tensors(LiteRtModel model);
 
 } // namespace margelo::nitro::tflite

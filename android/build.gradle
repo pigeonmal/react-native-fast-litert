@@ -1,5 +1,3 @@
-import org.gradle.api.file.RelativePath
-
 buildscript {
   repositories {
     google()
@@ -13,7 +11,9 @@ buildscript {
 
 def reactNativeArchitectures() {
   def value = rootProject.getProperties().get("reactNativeArchitectures")
-  return value ? value.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
+  def architectures = value ? value.split(",") : ["armeabi-v7a", "x86_64", "arm64-v8a"]
+  // LiteRT 2.1.6 does not publish an Android x86 runtime.
+  return architectures.findAll { it != "x86" }
 }
 
 apply plugin: "com.android.library"
@@ -119,7 +119,6 @@ repositories {
 
 // AAR extraction configurations
 configurations {
-  extractHeaders
   extractSO
 }
 
@@ -132,50 +131,9 @@ dependencies {
   // Add a dependency on NitroModules
   implementation project(":react-native-nitro-modules")
 
-  // Tensorflow Lite .aar (includes C API via prefabs)
-  implementation "com.google.ai.edge.litert:litert:1.4.0"
-  extractSO("com.google.ai.edge.litert:litert:1.4.0")
-  extractHeaders("com.google.ai.edge.litert:litert:1.4.0")
-
-  // Tensorflow Lite GPU delegate
-  implementation "com.google.ai.edge.litert:litert-gpu:1.4.0"
-  extractSO("com.google.ai.edge.litert:litert-gpu:1.4.0")
-  extractHeaders("com.google.ai.edge.litert:litert-gpu:1.4.0")
-}
-
-// Clean leftover empty directories
-task cleanEmptyDirectories(type: Delete) {
-  delete 'src/main/cpp/lib/headers'
-  delete 'src/main/cpp/lib/res'
-}
-
-// Extract .h headers from AARs
-task extractAARHeaders {
-  finalizedBy cleanEmptyDirectories
-  doLast {
-    configurations.extractHeaders.files.each { aarFile ->
-      def packageName = aarFile.name.tokenize('-')[0]
-      copy {
-        from zipTree(aarFile)
-        into "src/main/cpp/lib/"
-        include "**/*.h"
-        eachFile { fileCopyDetails ->
-          if (fileCopyDetails.name.endsWith(".h")) {
-            def originalRelativePath = fileCopyDetails.relativePath.toString()
-            if (originalRelativePath.startsWith("headers/external/org_tensorflow/tensorflow/")) {
-              def newRelativePath = packageName + "/headers/" + originalRelativePath.substring("headers/external/org_tensorflow/".length())
-              fileCopyDetails.relativePath = new RelativePath(true, newRelativePath.split('/'))
-            } else {
-              def newRelativePath = packageName + "/" + originalRelativePath
-              fileCopyDetails.relativePath = new RelativePath(true, newRelativePath.split('/'))
-            }
-          } else {
-            exclude fileCopyDetails.name
-          }
-        }
-      }
-    }
-  }
+  // LiteRT 2.x includes both the CompiledModel runtime and GPU accelerator.
+  runtimeOnly "com.google.ai.edge.litert:litert:2.1.6"
+  extractSO("com.google.ai.edge.litert:litert:2.1.6")
 }
 
 // Extract .so files from AARs
@@ -206,7 +164,5 @@ def nativeBuildDependsOn(dependsOnTask) {
 }
 
 afterEvaluate {
-  nativeBuildDependsOn(extractAARHeaders)
   nativeBuildDependsOn(extractSOFiles)
 }
-

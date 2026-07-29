@@ -53,9 +53,9 @@ Remember to add tests for your change if possible. Run the unit tests by:
 yarn test
 ```
 
-To edit the Objective-C or Swift files, open `example/ios/TfliteExample.xcworkspace` in XCode and find the source files at `Pods > Development Pods > react-native-fast-tflite`.
+To edit the Objective-C or Swift files, open `example/ios/TfliteExample.xcworkspace` in XCode and find the source files at `Pods > Development Pods > react-native-fast-litert`.
 
-To edit the Java or Kotlin files, open `example/android` in Android studio and find the source files at `react-native-fast-tflite` under `Android`.
+To edit the Java or Kotlin files, open `example/android` in Android Studio and find the source files at `react-native-fast-litert` under `Android`.
 
 
 ### Commit message convention

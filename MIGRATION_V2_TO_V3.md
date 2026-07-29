@@ -1,6 +1,6 @@
 # Migrating from v2 to v3
 
-`react-native-fast-tflite` v3 is a major rewrite that migrates from TurboModules to [Nitro Modules](https://github.com/mrousavy/nitro). The public API remains similar, but there are several breaking changes.
+`react-native-fast-litert` v3 is a major rewrite that migrates from TurboModules to [Nitro Modules](https://github.com/mrousavy/nitro). The public API remains similar, but there are several breaking changes.
 
 ## 1. Install `react-native-nitro-modules`
 
@@ -8,10 +8,10 @@ v3 requires `react-native-nitro-modules` as a peer dependency:
 
 ```sh
 # npm
-npm install react-native-fast-tflite react-native-nitro-modules
+npm install react-native-fast-litert react-native-nitro-modules
 
 # yarn
-yarn add react-native-fast-tflite react-native-nitro-modules
+yarn add react-native-fast-litert react-native-nitro-modules
 ```
 
 Then rebuild native projects:
@@ -118,4 +118,3 @@ If you had custom property overrides using the `Tflite_` prefix, rename them to 
 `Tensor.dataType` now includes additional types: `string`, `bfloat16`, `int4`, `uint16`, `uint32`, `uint64`, `complex64`, `complex128`, `resource`, `variant`, `none`.
 
 The `'invalid'` type has been removed. If you had exhaustive switch/case handling over `dataType`, update it accordingly.
-

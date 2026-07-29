@@ -1,7 +1,7 @@
 {
-  "name": "react-native-fast-tflite",
-  "version": "3.0.1",
-  "description": "High-performance TensorFlow Lite library for React Native, built with Nitro Modules",
+  "name": "react-native-fast-litert",
+  "version": "4.0.0",
+  "description": "High-performance LiteRT 2.x inference for React Native, powered by Nitro Modules with GPU acceleration",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
   "types": "lib/typescript/index.d.ts",
@@ -19,11 +19,14 @@
     "ios",
     "!ios/build",
     "cpp",
+    "third_party",
     "nitrogen",
     "nitro.json",
     "react-native.config.js",
     "*.podspec",
-    "app.plugin.js"
+    "app.plugin.js",
+    "!example",
+    "!testmodels"
   ],
   "scripts": {
     "typescript": "tsc --noEmit",
@@ -45,6 +48,9 @@
     "lite",
     "tensorflowlite",
     "tensorflow-lite",
+    "litert",
+    "google-ai-edge",
+    "gpu-inference",
     "visioncamera",
     "react-native-vision-camera",
     "vision",
@@ -52,13 +58,19 @@
     "ios",
     "android"
   ],
-  "repository": "https://github.com/mrousavy/react-native-fast-tflite",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pigeonmal/react-native-fast-litert.git"
+  },
   "author": "Marc Rousavy <me@mrousavy.com> (https://github.com/mrousavy)",
+  "contributors": [
+    "pigeonmal <eliastafnakji1@gmail.com> (https://github.com/pigeonmal)"
+  ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mrousavy/react-native-fast-tflite/issues"
+    "url": "https://github.com/pigeonmal/react-native-fast-litert/issues"
   },
-  "homepage": "https://github.com/mrousavy/react-native-fast-tflite#readme",
+  "homepage": "https://github.com/pigeonmal/react-native-fast-litert#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
