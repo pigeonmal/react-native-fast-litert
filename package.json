@@ -1,6 +1,6 @@
 {
   "name": "react-native-fast-litert",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "High-performance LiteRT 2.x inference for React Native, powered by Nitro Modules with GPU acceleration",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
